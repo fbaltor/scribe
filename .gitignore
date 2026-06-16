@@ -1,0 +1,23 @@
+# recordings & transcripts (large / private - never commit)
+meetings/
+recordings/
+*.wav
+*.flac
+*.mp3
+*.txt
+*.srt
+*.vtt
+
+# models
+models/
+*.bin
+*.gguf
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
