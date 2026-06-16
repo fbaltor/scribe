@@ -1,13 +1,22 @@
 # mise config - https://mise.jdx.dev
 # Provides env + task runner for scribe. Run `mise trust` once.
 #
-# NOTE: no Python pin here. On NixOS, mise's CPython (both source-compile and
-# the precompiled standalone asset) fails to install; the system Python (from
-# nix, currently 3.13) is used instead. For a *pinned/reproducible* runtime,
-# add a nix devshell (flake) rather than `[tools] python`. mise still manages
-# tasks, env, and any cleanly-distributed CLI tools added later.
+# Python is pinned via mise (no flake needed). On NixOS this needs mise
+# >= 2026.6.10: older mise picked the `freethreaded-...-stripped` python-build-
+# standalone asset and aborted with "Python installation is missing a `lib`
+# directory" (a mise asset-selection bug, NOT a nix-ld/ELF problem — the
+# prebuilt CPython runs fine via the FHS loader nix-ld provides). 2026.6.10+
+# picks the plain `install_only_stripped` asset and installs cleanly.
+# `[settings] python.compile = false` forces the prebuilt download. mise detects
+# /etc/NIXOS and would otherwise source-compile (the env var MISE_PYTHON_COMPILE
+# is NOT honored at install time — it must be a setting). Same lever as node's
+# `node.compile = false` in the global mise config.
+
+[settings]
+python.compile = false
 
 [tools]
+python = "3.13"
 # e.g. node = "lts" for JS helpers, or a static-binary CLI via ubi/aqua.
 
 [env]
