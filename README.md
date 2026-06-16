@@ -15,13 +15,40 @@ Built for a CPU-only Linux laptop (PipeWire), but the design is portable.
 | Transcribe | `scribe transcribe` | 🟡 planned (whisper.cpp `small.en`) |
 | Summarize | `scribe summarize` | 🟡 planned (local 3B LLM or Claude) |
 
+## Setup (mise)
+
+[mise](https://mise.jdx.dev) provides the env + task runner. It uses the system
+Python (3.13). Once:
+
+```bash
+cd ~/scribe
+mise trust
+```
+
+> On NixOS, runtimes are not pinned via mise (its CPython install fails here);
+> for a reproducible pin, add a nix devshell. mise handles tasks + env + any
+> cleanly-distributed CLI tools added later.
+
+Then use the tasks:
+
+```bash
+mise run capture        # record (Ctrl-C to stop)
+mise run transcribe     # [planned]
+mise run summarize      # [planned]
+```
+
 ## Capture
 
 ```bash
-python -m scribe capture            # -> ~/meetings/<timestamp>/{remote,mic}.wav
-python -m scribe capture ~/mtg/foo  # custom output dir
+mise run capture                    # -> recordings/<timestamp>/{remote,mic}.wav
+python -m scribe capture            # same (plain, no mise)
+python -m scribe capture /some/dir  # custom output dir
 # Ctrl-C to stop.
 ```
+
+Recordings are written **inside the repo** at `recordings/<timestamp>/` (path
+from `SCRIBE_RECORDINGS_DIR`, set by mise) and are gitignored — never
+committed.
 
 Produces **two** 16kHz mono WAVs:
 
@@ -62,5 +89,5 @@ with a 3B/7B model run in minutes (batch, after the meeting). Hybrid path
 ## Requirements
 
 - Linux + PipeWire (`pw-record`, `pw-dump` — ship with PipeWire).
-- Python 3.9+ (stdlib only for capture).
+- [mise](https://mise.jdx.dev) for tasks + env (uses system Python 3.13; capture is stdlib-only).
 - Later: `whisper-cpp` (in nixpkgs), optionally Ollama.

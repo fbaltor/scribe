@@ -67,9 +67,22 @@ def describe(dump, node_name):
     return node_name
 
 
+def recordings_dir():
+    """Base dir for recordings: env override, else <repo>/recordings.
+
+    SCRIBE_RECORDINGS_DIR is set by mise to {{config_root}}/recordings; the
+    fallback keeps output inside the repo even when run as plain python.
+    """
+    env = os.environ.get("SCRIBE_RECORDINGS_DIR")
+    if env:
+        return os.path.expanduser(env)
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(repo_root, "recordings")
+
+
 def default_out_dir():
-    return os.path.expanduser(
-        datetime.datetime.now().strftime("~/meetings/%Y-%m-%d_%H%M%S")
+    return os.path.join(
+        recordings_dir(), datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     )
 
 

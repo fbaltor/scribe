@@ -1,0 +1,27 @@
+# mise config - https://mise.jdx.dev
+# Provides env + task runner for scribe. Run `mise trust` once.
+#
+# NOTE: no Python pin here. On NixOS, mise's CPython (both source-compile and
+# the precompiled standalone asset) fails to install; the system Python (from
+# nix, currently 3.13) is used instead. For a *pinned/reproducible* runtime,
+# add a nix devshell (flake) rather than `[tools] python`. mise still manages
+# tasks, env, and any cleanly-distributed CLI tools added later.
+
+[tools]
+# e.g. node = "lts" for JS helpers, or a static-binary CLI via ubi/aqua.
+
+[env]
+# Recordings live INSIDE the repo (gitignored). {{config_root}} = repo root.
+SCRIBE_RECORDINGS_DIR = "{{config_root}}/recordings"
+
+[tasks.capture]
+description = "Record meeting audio (follows default device live)"
+run = "python -m scribe capture"
+
+[tasks.transcribe]
+description = "[planned] Whisper transcription"
+run = "python -m scribe transcribe"
+
+[tasks.summarize]
+description = "[planned] LLM summary"
+run = "python -m scribe summarize"
