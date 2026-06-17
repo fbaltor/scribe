@@ -8,10 +8,16 @@ recordings/
 *.srt
 *.vtt
 
+# ...except the tiny real-audio e2e fixture clip (committed on purpose)
+!tests/fixtures/**
+
 # models
 models/
 *.bin
 *.gguf
+
+# local secrets (HF_TOKEN etc.) - never commit
+mise.local.toml
 
 # python
 __pycache__/

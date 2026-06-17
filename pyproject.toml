@@ -2,10 +2,12 @@
 name = "scribe"
 version = "0.1.0"
 description = "Local, bot-free meeting note-taker (capture -> transcribe -> summarize). CPU-only, privacy-first."
-# Runtime is stdlib-only. 3.9 is a real floor: modern type hints stay safe via
-# `from __future__ import annotations` (the mise pin of 3.13 is just the dev runtime).
+# 3.9 is a real floor: modern type hints stay safe via `from __future__ import
+# annotations` (the mise pin of 3.13 is just the dev runtime).
+# capture is stdlib-only; transcribe needs faster-whisper (the lone runtime dep,
+# CTranslate2 under the hood). Installed into .venv via `mise run dev` (uv).
 requires-python = ">=3.9"
-dependencies = []
+dependencies = ["faster-whisper>=1.0"]
 
 # Lint (ruff) + type-check (pyright) come from mise [tools], not pip.
 # pytest is optional: the suite also runs on the stdlib via `python -m unittest`.
@@ -18,6 +20,11 @@ scribe = "scribe.__main__:main"
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
+
+# Explicit package: without this, setuptools' flat-layout auto-discovery sees
+# recordings/, scribe/, tests/ as competing top-level packages and refuses.
+[tool.setuptools.packages.find]
+include = ["scribe*"]
 
 [tool.ruff]
 line-length = 100

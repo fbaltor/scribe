@@ -12,7 +12,7 @@ Built for a CPU-only Linux laptop (PipeWire), but the design is portable.
 | Stage | Command | State |
 |------|---------|-------|
 | Capture | `scribe capture` | ✅ works |
-| Transcribe | `scribe transcribe` | 🟡 planned (whisper.cpp `small.en`) |
+| Transcribe | `scribe transcribe` | ✅ works (faster-whisper, multilingual `small`) |
 | Summarize | `scribe summarize` | 🟡 planned (local 3B LLM or Claude) |
 
 ## Setup (mise)
@@ -32,8 +32,9 @@ mise trust
 Then use the tasks:
 
 ```bash
+mise run dev            # install deps into .venv (needed for transcribe)
 mise run capture        # record (Ctrl-C to stop)
-mise run transcribe     # [planned]
+mise run transcribe     # transcribe the latest recording
 mise run summarize      # [planned]
 ```
 
@@ -70,24 +71,50 @@ Caveats: a sub-second glitch is possible at the moment of a switch; while the
 default is a silent device that span records silence (correct — it follows the
 default).
 
+## Transcribe
+
+```bash
+mise run dev                              # once: install deps into .venv
+mise run transcribe                       # latest recording
+python -m scribe transcribe recordings/<ts>   # a specific meeting
+python -m scribe transcribe --model small.en  # English-only (faster/better for EN)
+python -m scribe transcribe --language pt      # force a language (default: auto)
+```
+
+Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2),
+CPU-only, `int8`. The default model is multilingual **`small`** — the language is
+**auto-detected per track**, so a mixed-language call works. Weights download
+once to `models/` (gitignored); override with `SCRIBE_WHISPER_MODEL` /
+`SCRIBE_WHISPER_LANG` or the flags above.
+
+Because `capture` already produces **two tracks**, speakers are separated for
+free — each track is transcribed on its own and the segments are merged by
+timestamp. No diarization model needed. Writes into the meeting dir:
+
+- `mic.json` / `remote.json` — per-track segments + detected language (re-mergeable).
+- `transcript.txt` — merged, labeled, timestamped (`[hh:mm:ss] You: …` / `Them: …`).
+- `transcript.json` — structured mirror for the `summarize` stage.
+
+Model trade-off (CPU): `base` (fast, rougher) · `small` (default, sweet spot) ·
+`medium` (slower, better). `.en` variants (`small.en`) are English-only and a
+bit faster/sharper on English.
+
 ## Roadmap → "our own bot"
 
-1. **transcribe** — `whisper.cpp` (`small.en` is the CPU-only sweet spot,
-   ~real-time on a 15W chip). Per-track, then merge into a labeled transcript.
-2. **summarize** — feed the transcript to a local 3B LLM (Ollama) for full
+1. **summarize** — feed the transcript to a local 3B LLM (Ollama) for full
    privacy, or to Claude for a faster/better summary (only de-identifiable text
    leaves, never audio).
-3. **glue** — calendar trigger, auto start/stop on meeting-app audio, notes
+2. **glue** — calendar trigger, auto start/stop on meeting-app audio, notes
    written to the knowledge base.
 
 ## Hardware reality (this box: i7-8565U, no GPU)
 
-All inference is CPU. `small.en` keeps pace for transcription; local summaries
-with a 3B/7B model run in minutes (batch, after the meeting). Hybrid path
-(local transcript → cloud summary) is the pragmatic default.
+All inference is CPU. `small` keeps roughly real-time pace for transcription
+(batch, after the meeting); local summaries with a 3B/7B model run in minutes.
+Hybrid path (local transcript → cloud summary) is the pragmatic default.
 
 ## Requirements
 
 - Linux + PipeWire (`pw-record`, `pw-dump` — ship with PipeWire).
-- [mise](https://mise.jdx.dev) for tasks + env (uses system Python 3.13; capture is stdlib-only).
-- Later: `whisper-cpp` (in nixpkgs), optionally Ollama.
+- [mise](https://mise.jdx.dev) for tasks + env (uses system Python 3.13).
+- `faster-whisper` for transcribe (installed via `mise run dev`); optionally Ollama later.

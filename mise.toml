@@ -13,15 +13,23 @@
 # `node.compile = false` in the global mise config.
 
 [settings]
-python.compile = false
+python.compile = false      # prebuilt CPython download (see header)
+python.uv_venv_auto = true  # create the project .venv with `uv venv`, not `python -m venv`
 
 [tools]
 python = "3.13"
+uv = "latest"             # venv + installer; aqua static binary (system uv exists, but pin it here)
 ruff = "latest"           # linter/formatter — aqua static binary (no nix-ld needed)
 node = "lts"              # only needed by pyright (npm backend); prebuilt via nix-ld
 "npm:pyright" = "latest"  # type checker (not in mise registry; installed via npm)
 
 [env]
+# Auto-create + activate a project venv on `cd` (mise uses `uv venv` per
+# python.uv_venv_auto above). .venv is gitignored. Populate it with `mise run
+# dev`: the editable `scribe` install pulls the faster-whisper runtime dep, plus
+# pytest from the `[dev]` extra. (capture is stdlib-only; transcribe needs it.)
+_.python.venv = { path = ".venv", create = true }
+
 # Recordings live INSIDE the repo (gitignored). {{config_root}} = repo root.
 SCRIBE_RECORDINGS_DIR = "{{config_root}}/recordings"
 
@@ -30,7 +38,7 @@ description = "Record meeting audio (follows default device live)"
 run = "python -m scribe capture"
 
 [tasks.transcribe]
-description = "[planned] Whisper transcription"
+description = "Transcribe a meeting (faster-whisper; default: latest recording)"
 run = "python -m scribe transcribe"
 
 [tasks.summarize]
@@ -38,16 +46,27 @@ description = "[planned] LLM summary"
 run = "python -m scribe summarize"
 
 # --- dev ---------------------------------------------------------------------
-# `test` runs on the stdlib (no install needed). `lint`/`typecheck` need the
-# dev tools:  pip install -e '.[dev]'   (or add ruff/pyright via ubi/aqua).
+# ruff + pyright come from [tools] above, so `lint`/`typecheck` need no install.
+# `dev` populates the venv with the editable package (pulls faster-whisper) +
+# pytest; `test` runs on the stdlib (mocks faster-whisper) and needs nothing.
+[tasks.dev]
+description = "Install deps into the venv (editable scribe + faster-whisper + pytest) via uv"
+run = "uv pip install -e '.[dev]'"
+
 [tasks.test]
-description = "Run the test suite (stdlib unittest, zero deps)"
+description = "Run the test suite (stdlib unittest, zero deps; real-audio e2e skipped)"
 run = "python -m unittest discover -s tests"
 
+# Real-audio e2e: runs faster-whisper on the tiny committed fixture clip.
+# Needs `mise run dev` first (faster-whisper) + a one-time `tiny` model download.
+[tasks.test-e2e]
+description = "Run the real-audio e2e (faster-whisper on the fixture clip)"
+run = "SCRIBE_E2E=1 python -m unittest tests.test_transcribe_e2e -v"
+
 [tasks.lint]
-description = "Lint with ruff (needs .[dev])"
+description = "Lint with ruff"
 run = "ruff check ."
 
 [tasks.typecheck]
-description = "Type-check with pyright (needs .[dev])"
+description = "Type-check with pyright"
 run = "pyright"
