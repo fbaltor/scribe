@@ -10,21 +10,50 @@ so connecting/disconnecting Bluetooth mid-meeting moves the capture to the new
 device automatically (single continuous file, no restart). No real-time
 transcription. Ctrl-C to stop.
 """
+from __future__ import annotations
+
 import datetime
 import json
 import os
 import signal
 import subprocess
-import sys
+from pathlib import Path
+
+# --- capture parameters -----------------------------------------------------
+RATE = 16000  # Whisper-native sample rate
+CHANNELS = 1
+SAMPLE_FORMAT = "s16"
+# pw-record args shared by both tracks
+PW_RECORD_COMMON = [
+    "--rate", str(RATE),
+    "--channels", str(CHANNELS),
+    "--format", SAMPLE_FORMAT,
+]
+TERMINATE_TIMEOUT = 5  # seconds to wait for a clean WAV-header flush before kill
+
+# PipeWire object types / media classes / metadata keys
+NODE_TYPE = "PipeWire:Interface:Node"
+METADATA_TYPE = "PipeWire:Interface:Metadata"
+SINK_CLASS = "Audio/Sink"
+SOURCE_CLASS = "Audio/Source"
+DEFAULT_SINK_KEY = "default.audio.sink"
+DEFAULT_SOURCE_KEY = "default.audio.source"
 
 
-def pw_dump():
-    out = subprocess.run(["pw-dump"], capture_output=True, text=True, check=True).stdout
+class CaptureError(RuntimeError):
+    """Capture cannot proceed (e.g. no audio sink available)."""
+
+
+def pw_dump() -> list[dict]:
+    """Parsed ``pw-dump`` output: the full PipeWire object graph."""
+    out = subprocess.run(
+        ["pw-dump"], capture_output=True, text=True, check=True
+    ).stdout
     return json.loads(out)
 
 
-def _val_name(value):
-    # metadata value may already be a dict, or a JSON string
+def _val_name(value: object) -> str | None:
+    """Pull a ``name`` out of a metadata value (dict, JSON string, or plain str)."""
     if isinstance(value, str):
         try:
             value = json.loads(value)
@@ -33,97 +62,137 @@ def _val_name(value):
     return value.get("name") if isinstance(value, dict) else None
 
 
-def default_devices(dump):
-    """Return (sink_name, source_name) from PipeWire default-device metadata."""
-    sink = source = None
-    for o in dump:
-        if o.get("type") != "PipeWire:Interface:Metadata":
+def _nodes_by_name(dump: list[dict]) -> dict[str, dict]:
+    """Index ``node.name -> props`` for every node, in a single pass.
+
+    Insertion order follows the dump, so callers can still ask for the *first*
+    node of a given class by iterating the result.
+    """
+    index: dict[str, dict] = {}
+    for obj in dump:
+        if obj.get("type") != NODE_TYPE:
             continue
-        for m in o.get("metadata", []) or []:
-            if m.get("key") == "default.audio.sink":
+        props = (obj.get("info", {}) or {}).get("props", {}) or {}
+        name = props.get("node.name")
+        if name and name not in index:
+            index[name] = props
+    return index
+
+
+def default_devices(dump: list[dict]) -> tuple[str | None, str | None]:
+    """Return ``(sink_name, source_name)`` from PipeWire default-device metadata."""
+    sink = source = None
+    for obj in dump:
+        if obj.get("type") != METADATA_TYPE:
+            continue
+        for m in obj.get("metadata", []) or []:
+            key = m.get("key")
+            if key == DEFAULT_SINK_KEY:
                 sink = _val_name(m.get("value"))
-            elif m.get("key") == "default.audio.source":
+            elif key == DEFAULT_SOURCE_KEY:
                 source = _val_name(m.get("value"))
     return sink, source
 
 
-def first_of_class(dump, media_class):
-    for o in dump:
-        if o.get("type") != "PipeWire:Interface:Node":
-            continue
-        props = (o.get("info", {}) or {}).get("props", {}) or {}
-        if props.get("media.class") == media_class:
-            return props.get("node.name")
-    return None
-
-
-def describe(dump, node_name):
-    for o in dump:
-        if o.get("type") != "PipeWire:Interface:Node":
-            continue
-        props = (o.get("info", {}) or {}).get("props", {}) or {}
-        if props.get("node.name") == node_name:
-            return props.get("node.description") or node_name
-    return node_name
-
-
-def recordings_dir():
-    """Base dir for recordings: env override, else <repo>/recordings.
-
-    SCRIBE_RECORDINGS_DIR is set by mise to {{config_root}}/recordings; the
-    fallback keeps output inside the repo even when run as plain python.
-    """
-    env = os.environ.get("SCRIBE_RECORDINGS_DIR")
-    if env:
-        return os.path.expanduser(env)
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(repo_root, "recordings")
-
-
-def default_out_dir():
-    return os.path.join(
-        recordings_dir(), datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+def first_of_class(nodes: dict[str, dict], media_class: str) -> str | None:
+    """Name of the first node whose ``media.class`` matches, else ``None``."""
+    return next(
+        (name for name, props in nodes.items()
+         if props.get("media.class") == media_class),
+        None,
     )
 
 
-def capture(out_dir=None):
-    out_dir = os.path.expanduser(out_dir) if out_dir else default_out_dir()
-    os.makedirs(out_dir, exist_ok=True)
+def describe(nodes: dict[str, dict], node_name: str) -> str:
+    """Human-readable description for a node name (falls back to the name)."""
+    props = nodes.get(node_name)
+    return (props.get("node.description") if props else None) or node_name
+
+
+def recordings_dir() -> Path:
+    """Base dir for recordings: env override, else ``<repo>/recordings``.
+
+    ``SCRIBE_RECORDINGS_DIR`` is set by mise to ``{{config_root}}/recordings``;
+    the fallback keeps output inside the repo even when run as plain python.
+    """
+    env = os.environ.get("SCRIBE_RECORDINGS_DIR")
+    if env:
+        return Path(env).expanduser()
+    return Path(__file__).resolve().parent.parent / "recordings"
+
+
+def default_out_dir() -> Path:
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    return recordings_dir() / stamp
+
+
+def _human_size(num_bytes: int) -> str:
+    size = float(num_bytes)
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if size < 1024 or unit == "GiB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GiB"  # unreachable; satisfies type-checkers
+
+
+def _print_listing(directory: Path) -> None:
+    for entry in sorted(directory.iterdir()):
+        print(f"  {_human_size(entry.stat().st_size):>9}  {entry.name}")
+
+
+def capture(out_dir: str | os.PathLike[str] | None = None) -> Path:
+    out = Path(out_dir).expanduser() if out_dir else default_out_dir()
+    out.mkdir(parents=True, exist_ok=True)
 
     dump = pw_dump()
+    nodes = _nodes_by_name(dump)
     sink, source = default_devices(dump)
-    sink = sink or first_of_class(dump, "Audio/Sink")
-    source = source or first_of_class(dump, "Audio/Source")
+    sink = sink or first_of_class(nodes, SINK_CLASS)
+    source = source or first_of_class(nodes, SOURCE_CLASS)
 
     if not sink:
-        sys.exit("No output sink found - is audio configured?")
+        raise CaptureError("No output sink found - is audio configured?")
 
     # No fixed --target: streams follow the default device live, so connecting
     # or disconnecting Bluetooth mid-meeting moves the capture automatically.
-    print(f"Recording -> {out_dir}   (follows device changes live)")
-    print(f"  remote.wav  <- default output monitor   (now: {describe(dump, sink)})")
-    print(f"  mic.wav     <- default input source      (now: {describe(dump, source) if source else 'none yet'})")
+    here = describe(nodes, source) if source else "none yet"
+    print(f"Recording -> {out}   (follows device changes live)")
+    print(f"  remote.wav  <- default output monitor   (now: {describe(nodes, sink)})")
+    print(f"  mic.wav     <- default input source      (now: {here})")
     print("Connect/disconnect Bluetooth anytime. Press Ctrl-C to stop.\n")
 
-    common = ["--rate", "16000", "--channels", "1", "--format", "s16"]
-    procs = [
-        # remote = monitor of whatever sink is default (stream.capture.sink, no target)
-        subprocess.Popen(["pw-record", "-P", "stream.capture.sink=true",
-                          *common, os.path.join(out_dir, "remote.wav")]),
-        # mic = whatever source is default (no target -> session manager follows default)
-        subprocess.Popen(["pw-record", *common, os.path.join(out_dir, "mic.wav")]),
-    ]
+    procs: list[subprocess.Popen] = []
 
-    def stop(*_):
+    def stop(*_: object) -> None:
         for p in procs:
             if p.poll() is None:
                 p.terminate()
-    signal.signal(signal.SIGINT, stop)
-    signal.signal(signal.SIGTERM, stop)
 
-    for p in procs:
-        p.wait()
+    old_int = signal.signal(signal.SIGINT, stop)
+    old_term = signal.signal(signal.SIGTERM, stop)
+    try:
+        # remote = monitor of whatever sink is default (no target)
+        procs.append(subprocess.Popen(
+            ["pw-record", "-P", "stream.capture.sink=true",
+             *PW_RECORD_COMMON, str(out / "remote.wav")]))
+        # mic = whatever source is default (no target -> session manager follows)
+        procs.append(subprocess.Popen(
+            ["pw-record", *PW_RECORD_COMMON, str(out / "mic.wav")]))
+        for p in procs:
+            p.wait()
+    finally:
+        # Terminate anything still alive (e.g. one Popen failed, or we unwound
+        # for a reason other than the signal handler), then reap so pw-record
+        # gets to flush the final RIFF size into the WAV header.
+        stop()
+        for p in procs:
+            try:
+                p.wait(timeout=TERMINATE_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
 
     print("\nStopped. Saved:")
-    subprocess.run(["ls", "-lh", out_dir])
-    return out_dir
+    _print_listing(out)
+    return out

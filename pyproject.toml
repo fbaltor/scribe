@@ -2,8 +2,15 @@
 name = "scribe"
 version = "0.1.0"
 description = "Local, bot-free meeting note-taker (capture -> transcribe -> summarize). CPU-only, privacy-first."
+# Runtime is stdlib-only. 3.9 is a real floor: modern type hints stay safe via
+# `from __future__ import annotations` (the mise pin of 3.13 is just the dev runtime).
 requires-python = ">=3.9"
 dependencies = []
+
+# Lint (ruff) + type-check (pyright) come from mise [tools], not pip.
+# pytest is optional: the suite also runs on the stdlib via `python -m unittest`.
+[project.optional-dependencies]
+dev = ["pytest>=8"]
 
 [project.scripts]
 scribe = "scribe.__main__:main"
@@ -11,3 +18,19 @@ scribe = "scribe.__main__:main"
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, pyupgrade, bugbear, simplify
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyright]
+include = ["scribe", "tests"]
+pythonVersion = "3.9"
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

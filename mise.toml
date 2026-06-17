@@ -17,7 +17,9 @@ python.compile = false
 
 [tools]
 python = "3.13"
-# e.g. node = "lts" for JS helpers, or a static-binary CLI via ubi/aqua.
+ruff = "latest"           # linter/formatter — aqua static binary (no nix-ld needed)
+node = "lts"              # only needed by pyright (npm backend); prebuilt via nix-ld
+"npm:pyright" = "latest"  # type checker (not in mise registry; installed via npm)
 
 [env]
 # Recordings live INSIDE the repo (gitignored). {{config_root}} = repo root.
@@ -34,3 +36,18 @@ run = "python -m scribe transcribe"
 [tasks.summarize]
 description = "[planned] LLM summary"
 run = "python -m scribe summarize"
+
+# --- dev ---------------------------------------------------------------------
+# `test` runs on the stdlib (no install needed). `lint`/`typecheck` need the
+# dev tools:  pip install -e '.[dev]'   (or add ruff/pyright via ubi/aqua).
+[tasks.test]
+description = "Run the test suite (stdlib unittest, zero deps)"
+run = "python -m unittest discover -s tests"
+
+[tasks.lint]
+description = "Lint with ruff (needs .[dev])"
+run = "ruff check ."
+
+[tasks.typecheck]
+description = "Type-check with pyright (needs .[dev])"
+run = "pyright"

@@ -4,17 +4,22 @@
   scribe transcribe <dir>    [planned] Whisper transcription
   scribe summarize  <dir>    [planned] LLM summary
 """
+from __future__ import annotations
+
 import argparse
 import sys
 
 from . import capture as capture_mod
 
 
-def cmd_capture(args):
-    capture_mod.capture(args.out)
+def cmd_capture(args: argparse.Namespace) -> None:
+    try:
+        capture_mod.capture(args.out)
+    except capture_mod.CaptureError as e:
+        sys.exit(str(e))
 
 
-def cmd_transcribe(args):
+def cmd_transcribe(args: argparse.Namespace) -> None:
     sys.exit(
         "transcribe: not implemented yet.\n"
         "Roadmap: whisper.cpp small.en (CPU-only ~real-time) over remote.wav + mic.wav.\n"
@@ -23,7 +28,7 @@ def cmd_transcribe(args):
     )
 
 
-def cmd_summarize(args):
+def cmd_summarize(args: argparse.Namespace) -> None:
     sys.exit(
         "summarize: not implemented yet.\n"
         "Roadmap: feed the merged transcript to a local 3B LLM (Ollama) or to Claude.\n"
@@ -31,7 +36,7 @@ def cmd_summarize(args):
     )
 
 
-def main():
+def main() -> None:
     p = argparse.ArgumentParser(
         prog="scribe",
         description="Local, bot-free meeting note-taker. No bot joins the call; "
@@ -41,7 +46,7 @@ def main():
 
     c = sub.add_parser("capture", help="record meeting audio (follows default device live)")
     c.add_argument("out", nargs="?", default=None,
-                   help="output dir (default: ~/meetings/<timestamp>)")
+                   help="output dir (default: recordings/<timestamp> inside the repo)")
     c.set_defaults(func=cmd_capture)
 
     t = sub.add_parser("transcribe", help="[planned] Whisper transcription")
