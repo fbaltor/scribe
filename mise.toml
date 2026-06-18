@@ -42,7 +42,7 @@ description = "Transcribe a meeting (faster-whisper; default: latest recording)"
 run = "python -m scribe transcribe"
 
 [tasks.summarize]
-description = "[planned] LLM summary"
+description = "Summarize a transcript into summary.md (default: Claude Code CLI; latest recording)"
 run = "python -m scribe summarize"
 
 # --- dev ---------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
   scribe capture [out_dir]   record meeting audio (works today)
   scribe transcribe [dir]    faster-whisper transcription (per-track + merged)
-  scribe summarize  <dir>    [planned] LLM summary
+  scribe summarize  [dir]    LLM summary of the transcript (default: Claude Code CLI)
 """
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import argparse
 import sys
 
 from . import capture as capture_mod
+from . import summarize as summarize_mod
 from . import transcribe as transcribe_mod
 
 
@@ -29,11 +30,13 @@ def cmd_transcribe(args: argparse.Namespace) -> None:
 
 
 def cmd_summarize(args: argparse.Namespace) -> None:
-    sys.exit(
-        "summarize: not implemented yet.\n"
-        "Roadmap: feed the merged transcript to a local 3B LLM (Ollama) or to Claude.\n"
-        "On this CPU-only box, hybrid (local transcript -> cloud summary) is the fast path."
-    )
+    try:
+        out = summarize_mod.summarize(
+            args.dir, provider=args.provider, model=args.model, prompt=args.prompt
+        )
+        print(out)
+    except summarize_mod.SummarizeError as e:
+        sys.exit(str(e))
 
 
 def main() -> None:
@@ -59,8 +62,16 @@ def main() -> None:
                    help="force language e.g. pt/en (default: auto-detect; env SCRIBE_WHISPER_LANG)")
     t.set_defaults(func=cmd_transcribe)
 
-    s = sub.add_parser("summarize", help="[planned] LLM summary")
-    s.add_argument("dir", nargs="?", help="meeting dir with transcript")
+    s = sub.add_parser("summarize",
+                       help="summarize a transcript into summary.md (default: Claude Code CLI)")
+    s.add_argument("dir", nargs="?", default=None,
+                   help="meeting dir with transcript.txt (default: latest recording)")
+    s.add_argument("--provider", default=None,
+                   help="summary backend (default: claude-code; env SCRIBE_SUMMARY_PROVIDER)")
+    s.add_argument("--model", default=None,
+                   help="provider model (default: provider's own; env SCRIBE_SUMMARY_MODEL)")
+    s.add_argument("--prompt", default=None,
+                   help="override prompt text (env SCRIBE_SUMMARY_PROMPT = path to a prompt file)")
     s.set_defaults(func=cmd_summarize)
 
     args = p.parse_args()

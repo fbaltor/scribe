@@ -13,7 +13,7 @@ Built for a CPU-only Linux laptop (PipeWire), but the design is portable.
 |------|---------|-------|
 | Capture | `scribe capture` | ✅ works |
 | Transcribe | `scribe transcribe` | ✅ works (faster-whisper, multilingual `small`) |
-| Summarize | `scribe summarize` | 🟡 planned (local 3B LLM or Claude) |
+| Summarize | `scribe summarize` | ✅ works (Claude Code CLI; provider-agnostic) |
 
 ## Setup (mise)
 
@@ -35,7 +35,7 @@ Then use the tasks:
 mise run dev            # install deps into .venv (needed for transcribe)
 mise run capture        # record (Ctrl-C to stop)
 mise run transcribe     # transcribe the latest recording
-mise run summarize      # [planned]
+mise run summarize      # summarize the latest transcript -> summary.md
 ```
 
 ## Capture
@@ -99,11 +99,38 @@ Model trade-off (CPU): `base` (fast, rougher) · `small` (default, sweet spot) �
 `medium` (slower, better). `.en` variants (`small.en`) are English-only and a
 bit faster/sharper on English.
 
+## Summarize
+
+```bash
+mise run summarize                              # latest transcript
+python -m scribe summarize recordings/<ts>      # a specific meeting
+python -m scribe summarize --prompt "TL;DR in 3 bullets"  # override the prompt
+python -m scribe summarize --model opus         # pass a model to the backend
+```
+
+Feeds `transcript.txt` to an LLM and writes an iwe-ready note next to it:
+
+- `summary.md` — titled (`# Meeting — <date>`), dated, concise prose summary in
+  the transcript's language. Drop it into your notes.
+
+**Provider-agnostic, one backend shipped.** The default `claude-code` provider
+shells out to the [Claude Code](https://www.claude.com/product/claude-code) CLI
+(`claude -p`) — zero config, no API key, no extra dependency: it reuses your
+existing login, and only the *text* transcript is sent (never audio). Adding a
+backend (Anthropic SDK, Ollama, …) is just implementing a `Summarizer` and
+registering it in `PROVIDERS`. Overrides follow the same `flag > env > default`
+rule as transcribe:
+
+- `--provider` / `SCRIBE_SUMMARY_PROVIDER` — backend (default `claude-code`).
+- `--model` / `SCRIBE_SUMMARY_MODEL` — backend model (default: the backend's own).
+- `--prompt` (literal text) / `SCRIBE_SUMMARY_PROMPT` (path to a prompt file).
+
 ## Roadmap → "our own bot"
 
-1. **summarize** — feed the transcript to a local 3B LLM (Ollama) for full
-   privacy, or to Claude for a faster/better summary (only de-identifiable text
-   leaves, never audio).
+The pipeline (capture → transcribe → summarize) works end to end. Next:
+
+1. **more backends** — a local Ollama provider for fully-offline summaries
+   (privacy over speed/quality), an Anthropic-SDK provider for streaming/control.
 2. **glue** — calendar trigger, auto start/stop on meeting-app audio, notes
    written to the knowledge base.
 
@@ -117,4 +144,6 @@ Hybrid path (local transcript → cloud summary) is the pragmatic default.
 
 - Linux + PipeWire (`pw-record`, `pw-dump` — ship with PipeWire).
 - [mise](https://mise.jdx.dev) for tasks + env (uses system Python 3.13).
-- `faster-whisper` for transcribe (installed via `mise run dev`); optionally Ollama later.
+- `faster-whisper` for transcribe (installed via `mise run dev`).
+- The `claude` CLI ([Claude Code](https://www.claude.com/product/claude-code)) for the
+  default summarize backend; optionally Ollama / an API key for other backends later.
